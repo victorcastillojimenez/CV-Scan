@@ -1,17 +1,18 @@
 # 🚀 CV SCAN AI — Agencia de Colocación Inteligente
 
-Aplicación web Streamlit que combina **análisis de CV con IA** y un sistema **multi-agente CrewAI** para búsqueda de empleo automatizada.
+Aplicación web Streamlit que combina **análisis de CV con IA**, un sistema **multi-agente CrewAI** y **RAG (Retrieval Augmented Generation)** para un asesoramiento basado en conocimiento experto.
 
 ## Funcionalidades
 
 | Pestaña | Descripción |
 |---------|-------------|
-| 📊 **Reporte Ejecutivo** | Análisis rápido del CV con streaming (nota, fortalezas, mejoras, roles) |
+| 📊 **Reporte Ejecutivo** | Análisis del CV enriquecido con RAG (nota, fortalezas, mejoras, roles) |
 | 🤖 **Agencia CrewAI** | Pipeline de 4 agentes que buscan ofertas reales y redactan postulaciones |
-| 💬 **Chat Asistente** | Chatbot contextual sobre el CV del candidato |
+| 💬 **Chat Asistente** | Chatbot con RAG dinámico sobre el CV y mejores prácticas de RRHH |
 
-## Arquitectura
+## Arquitectura del Sistema
 
+### 1. Multi-Agente CrewAI
 El sistema usa **4 agentes especializados** en un flujo **jerárquico** supervisado por un Manager LLM:
 
 ```
@@ -22,11 +23,20 @@ El sistema usa **4 agentes especializados** en un flujo **jerárquico** supervis
  └── ✍️ app_strategist       → Redacta postulaciones
 ```
 
+### 2. Sistema RAG (Retrieval Augmented Generation)
+Para garantizar que el análisis y el chat sigan estándares profesionales, se implementó un sistema RAG:
+
+- **Motor Vectorial**: [ChromaDB](https://www.trychroma.com/) (persistente en disco).
+- **Embeddings**: `all-MiniLM-L6-v2` vía [SentenceTransformers](https://www.sbert.net/).
+- **Base de Conocimiento**: PDFs expertos situados en `/conocimiento_cv`.
+- **Integración**: Los agentes y el chat consultan automáticamente esta base para fundamentar sus críticas y consejos.
+
 ## Requisitos
 
 - Python 3.11+
-- API Key de [Groq](https://console.groq.com/) (LLM)
+- API Key de [Groq](https://console.groq.com/) (LLM rápido)
 - API Key de [Serper](https://serper.dev/) (búsquedas web)
+- (Opcional) [Ollama](https://ollama.com/) para ejecución local.
 
 ## Instalación
 
@@ -42,20 +52,16 @@ venv\Scripts\activate   # Windows
 
 # 3. Instalar dependencias
 pip install -r requirements.txt
-
-# 4. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus API keys
 ```
 
 ## Configuración
 
-Crear un archivo `.env` en la raíz del proyecto:
-
+1. Crear un archivo `.env` en la raíz basado en `.env.example`:
 ```env
 GROQ_API_KEY=tu_clave_groq_aqui
 SERPER_API_KEY=tu_clave_serper_aqui
 ```
+2. (Opcional) Añade tus propios PDFs de expertos en la carpeta `conocimiento_cv/` para que el RAG los aprenda.
 
 ## Uso
 
@@ -63,32 +69,30 @@ SERPER_API_KEY=tu_clave_serper_aqui
 streamlit run main.py
 ```
 
-1. Sube un CV en formato PDF
-2. Usa **⚡ Analizar Perfil** para obtener el reporte ejecutivo
-3. Usa **🚀 Lanzar Agencia** para activar los 4 agentes CrewAI
-4. Chatea con el asistente sobre el CV del candidato
+1. Sube un CV en formato PDF.
+2. Usa **⚡ Analizar Perfil** para obtener el reporte (usa RAG para comparar tu CV con estándares).
+3. Usa **🚀 Lanzar Agencia** para activar los agentes CrewAI.
+4. Chatea con el asistente; responderá usando tanto tu CV como la base de conocimiento RAG.
 
 ## Estructura del proyecto
 
 ```
 crew_AI/
-├── .streamlit/config.toml   # Tema dark neon
-├── assets/                  # Logos y banners
+├── .streamlit/config.toml     # Tema dark neon
+├── assets/                    # Logos y banners
 ├── config/
-│   ├── agents.yaml          # Configuración de agentes (roles, backstories)
-│   └── tasks.yaml           # Definición de tareas (descripciones, outputs)
+│   ├── agents.yaml            # Configuración de agentes
+│   └── tasks.yaml             # Definición de tareas
+├── conocimiento_cv/           # [NUEVO] PDFs para el sistema RAG
 ├── core/
-│   ├── __init__.py
-│   ├── agencia_crew.py      # Clase principal CrewAI (4 agentes)
-│   ├── exceptions.py        # Excepciones personalizadas
-│   ├── styles.py            # CSS neon dark theme
-│   ├── utils.py             # Extracción PDF, conexión Groq/Ollama
-│   └── validators.py        # Validación de inputs
-├── tests/
-│   └── test_agencia.py      # Tests unitarios
-├── main.py                  # App Streamlit (punto de entrada)
-├── requirements.txt         # Dependencias
-└── .env                     # Variables de entorno (NO compartir)
+│   ├── agencia_crew.py        # Clase principal CrewAI
+│   ├── rag.py                 # [NUEVO] Lógica de ChromaDB y embeddings
+│   ├── styles.py              # CSS neon dark theme
+│   └── utils.py               # Extracción PDF y cliente LLM
+├── db_cv_expert/              # [NUEVO] Base de datos vectorial persistente
+├── main.py                    # App Streamlit (punto de entrada)
+├── requirements.txt           # Dependencias (incluye chromadb, torch)
+└── .env                       # Variables de entorno
 ```
 
 ## Tests
@@ -100,3 +104,4 @@ python -m pytest tests/ -v
 ## Licencia
 
 Proyecto académico — uso educativo.
+
