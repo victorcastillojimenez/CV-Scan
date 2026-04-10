@@ -22,3 +22,5 @@ reporte_postulacion.md
 
 .agent/
 .agent/*
+db_cv_expert/
+.pytest_cache/

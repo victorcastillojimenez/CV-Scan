@@ -1,3 +1,9 @@
+# === Índices de paquetes ===
+# torch con soporte CPU-only (~400MB vs ~2GB con GPU support)
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
+# === Dependencias principales ===
 crewai==1.9.3
 crewai-tools==1.9.3
 litellm
@@ -7,3 +13,9 @@ PyMuPDF
 requests
 python-dotenv
 google-generativeai
+
+# === Sistema RAG ===
+chromadb
+sentence-transformers
+pypdf
+torch

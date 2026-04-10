@@ -3,14 +3,25 @@ CV SCAN AI — Agencia de Colocación Inteligente.
 
 Aplicación Streamlit que combina análisis de CV con un sistema
 multi-agente CrewAI para búsqueda de empleo automatizada.
+Incluye RAG (Retrieval Augmented Generation) para enriquecer
+el análisis de CVs con conocimiento experto sobre buenas prácticas.
 """
 
 import os
+import logging
 
 import streamlit as st
 from dotenv import load_dotenv
 
 from core import styles, utils
+from core.rag import consultar_rag, inicializar_coleccion, ingestar_conocimiento
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 # ─── Configuración ───────────────────────────────────────────
 load_dotenv()
@@ -21,10 +32,37 @@ os.environ["OTEL_SDK_DISABLED"] = "true"
 
 try:
     styles.configurar_pagina()
-except Exception:
+except Exception as exc:
+    logger.warning("Error configurando página personalizada: %s", exc)
     st.set_page_config(layout="wide", page_title="CV SCAN AI")
 
 styles.cargar_css()
+
+# ─── Inicialización RAG ─────────────────────────────────────
+# @st.cache_resource evita reinicializar ChromaDB en cada render
+@st.cache_resource
+def _cargar_rag():
+    """Inicializa la colección RAG e ingesta los PDFs de conocimiento.
+    
+    Returns:
+        Colección ChromaDB lista para consultas, o None si hay error.
+    """
+    try:
+        coleccion = inicializar_coleccion()
+        ruta_pdfs = os.path.join(os.path.dirname(__file__), "conocimiento_cv")
+        fragmentos_nuevos = ingestar_conocimiento(coleccion, ruta_pdfs)
+        logger.info("RAG inicializado correctamente. Fragmentos ingestados: %d", fragmentos_nuevos)
+        return coleccion
+    except Exception as exc:
+        logger.error("Error al inicializar RAG: %s", exc)
+        st.error("⚠️ No se pudo cargar el sistema RAG. Las respuestas pueden ser menos precisas.")
+        return None
+
+coleccion_rag = _cargar_rag()
+
+# Si el RAG no se puede cargar, las consultas devolverán cadena vacía
+if coleccion_rag is None:
+    logger.warning("Sistema RAG no disponible. Las consultas CAG devolverán resultados vacíos.")
 
 # ─── Estado de sesión ────────────────────────────────────────
 defaults = {
@@ -221,15 +259,31 @@ with tab_reporte:
         if not st.session_state.texto_pdf:
             st.error("⚠️ Por favor, sube primero un PDF.")
         else:
+            # Recuperar conocimiento experto del RAG
+            contexto_expertos = consultar_rag(
+                "mejores prácticas CV formato ATS estructura logros verbos de acción",
+                coleccion_rag,
+            )
+
+            bloque_rag = ""
+            if contexto_expertos:
+                bloque_rag = (
+                    "\n\nUsa el siguiente CONOCIMIENTO EXPERTO como base "
+                    "para tu crítica y recomendaciones:\n"
+                    f"{contexto_expertos}"
+                )
+
             prompt_sistema = f"""
-            Eres un experto en recursos humanos.
+            Eres un experto senior en recursos humanos.
+            {bloque_rag}
+
             Analiza el CV proporcionado y genera un informe detallado con:
             1. Nota 0-10 calidad CV.
             2. Puntos fuertes.
-            3. Áreas de mejora.
-            4. Recomendaciones.
+            3. Áreas de mejora (comparando con el conocimiento experto).
+            4. Recomendaciones de redacción (basado en verbos de acción).
             5. Adecuación (claridad/diseño).
-            6. Competencias técnicas/blandas.
+            6. Competencias técnicas/blandas detectadas.
             7. Roles adecuados.
             Usa Markdown claro. CV:
             {st.session_state.texto_pdf[:6000]}
@@ -237,7 +291,7 @@ with tab_reporte:
 
             mensajes_temp = [{"role": "user", "content": prompt_sistema}]
             placeholder = st.empty()
-            placeholder.markdown("⏳ **Analizando perfil... Generando reporte estratégico.**")
+            placeholder.markdown("⏳ **Consultando base de conocimientos y analizando perfil...**")
 
             resultado_texto = ""
 
@@ -423,10 +477,18 @@ with tab_chat:
                 with st.chat_message("user", avatar="👤"):
                     st.markdown(prompt_usuario)
 
+                # RAG dinámico: consultar conocimiento experto según la pregunta
+                contexto_rag = consultar_rag(prompt_usuario, coleccion_rag)
+
                 contexto = (
                     f"Actúa como asistente de RRHH. "
                     f"Aquí tienes el contenido del CV:\n{st.session_state.texto_pdf[:6000]}"
                 )
+                if contexto_rag:
+                    contexto += (
+                        f"\n\nCONOCIMIENTO EXPERTO relevante para esta consulta "
+                        f"(úsalo para fundamentar tu respuesta):\n{contexto_rag}"
+                    )
                 if st.session_state.analisis_realizado:
                     contexto += (
                         f"\n\nADEMÁS, YA HAS GENERADO ESTE INFORME DE ANÁLISIS "
