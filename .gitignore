@@ -24,3 +24,7 @@ reporte_postulacion.md
 .agent/*
 db_cv_expert/
 .pytest_cache/
+
+# Ejemplos del profesor (referencia local)
+_profesor_ejemplos/
+*.zip

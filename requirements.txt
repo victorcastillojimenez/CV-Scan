@@ -8,6 +8,7 @@ crewai==1.9.3
 crewai-tools==1.9.3
 litellm
 groq
+openai
 streamlit
 PyMuPDF
 requests
