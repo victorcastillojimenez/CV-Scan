@@ -18,6 +18,7 @@ ENV/
 
 # Archivos de datos o logs
 *.log
+reporte_postulacion.md
 
 .agent/
 .agent/*
