@@ -1,27 +1,32 @@
-# 🚀 Agencia de Colocación Inteligente
+# 🚀 CV SCAN AI — Agencia de Colocación Inteligente
 
-Sistema multi-agente construido con [CrewAI](https://www.crewai.com/) que analiza CVs, busca ofertas de empleo reales, investiga empresas y redacta mensajes de postulación personalizados.
+Aplicación web Streamlit que combina **análisis de CV con IA** y un sistema **multi-agente CrewAI** para búsqueda de empleo automatizada.
+
+## Funcionalidades
+
+| Pestaña | Descripción |
+|---------|-------------|
+| 📊 **Reporte Ejecutivo** | Análisis rápido del CV con streaming (nota, fortalezas, mejoras, roles) |
+| 🤖 **Agencia CrewAI** | Pipeline de 4 agentes que buscan ofertas reales y redactan postulaciones |
+| 💬 **Chat Asistente** | Chatbot contextual sobre el CV del candidato |
 
 ## Arquitectura
 
 El sistema usa **4 agentes especializados** en un flujo **jerárquico** supervisado por un Manager LLM:
 
 ```
-career_profiler → job_market_scout → corporate_culture_researcher → application_strategist
+👔 Manager LLM (coordinador)
+ ├── 🎯 career_profiler      → Analiza CV y sugiere roles     [FileReadTool]
+ ├── 🔍 job_market_scout     → Busca ofertas reales online    [SerperDevTool]
+ ├── 🏢 culture_researcher   → Investiga cultura empresarial  [SerperDevTool]
+ └── ✍️ app_strategist       → Redacta postulaciones
 ```
-
-| Agente | Rol | Herramientas |
-|--------|-----|-------------|
-| `career_profiler` | Analiza CV y sugiere roles | FileReadTool |
-| `job_market_scout` | Busca ofertas reales online | SerperDevTool |
-| `corporate_culture_researcher` | Investiga cultura empresarial | SerperDevTool |
-| `application_strategist` | Redacta postulaciones | — |
 
 ## Requisitos
 
 - Python 3.11+
-- API Key de [Groq](https://console.groq.com/)
-- API Key de [Serper](https://serper.dev/) (para búsquedas web)
+- API Key de [Groq](https://console.groq.com/) (LLM)
+- API Key de [Serper](https://serper.dev/) (búsquedas web)
 
 ## Instalación
 
@@ -55,25 +60,35 @@ SERPER_API_KEY=tu_clave_serper_aqui
 ## Uso
 
 ```bash
-python main.py
+streamlit run main.py
 ```
 
-El sistema generará un archivo `reporte_postulacion.md` con los mensajes de postulación personalizados.
+1. Sube un CV en formato PDF
+2. Usa **⚡ Analizar Perfil** para obtener el reporte ejecutivo
+3. Usa **🚀 Lanzar Agencia** para activar los 4 agentes CrewAI
+4. Chatea con el asistente sobre el CV del candidato
 
 ## Estructura del proyecto
 
 ```
 crew_AI/
+├── .streamlit/config.toml   # Tema dark neon
+├── assets/                  # Logos y banners
 ├── config/
-│   ├── agents.yaml      # Configuración de agentes (roles, backstories)
-│   └── tasks.yaml       # Definición de tareas (descripciones, outputs)
-├── agencia_crew.py      # Clase principal de la crew
-├── exceptions.py        # Excepciones personalizadas
-├── main.py              # Punto de entrada
-├── requirements.txt     # Dependencias con versiones fijadas
-├── tests/               # Tests unitarios
-│   └── test_agencia.py
-└── .env                 # Variables de entorno (NO compartir)
+│   ├── agents.yaml          # Configuración de agentes (roles, backstories)
+│   └── tasks.yaml           # Definición de tareas (descripciones, outputs)
+├── core/
+│   ├── __init__.py
+│   ├── agencia_crew.py      # Clase principal CrewAI (4 agentes)
+│   ├── exceptions.py        # Excepciones personalizadas
+│   ├── styles.py            # CSS neon dark theme
+│   ├── utils.py             # Extracción PDF, conexión Groq/Ollama
+│   └── validators.py        # Validación de inputs
+├── tests/
+│   └── test_agencia.py      # Tests unitarios
+├── main.py                  # App Streamlit (punto de entrada)
+├── requirements.txt         # Dependencias
+└── .env                     # Variables de entorno (NO compartir)
 ```
 
 ## Tests

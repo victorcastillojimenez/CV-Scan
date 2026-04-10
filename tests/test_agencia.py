@@ -6,16 +6,16 @@ sin depender de llamadas reales a APIs externas.
 """
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from exceptions import (
+from core.exceptions import (
     AgencyConfigError,
     CrewExecutionError,
     InputValidationError,
 )
-from main import validate_inputs
+from core.validators import validate_inputs
 
 
 # =============================================
@@ -116,5 +116,5 @@ class TestAgenciaColocacionConfig:
         """Sin GROQ_API_KEY debe lanzar AgencyConfigError."""
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(AgencyConfigError, match="GROQ_API_KEY"):
-                from agencia_crew import AgenciaColocacion
+                from core.agencia_crew import AgenciaColocacion
                 AgenciaColocacion()

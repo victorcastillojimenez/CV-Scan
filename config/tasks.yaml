@@ -1,48 +1,44 @@
 profile_assessment_task:
   description: >
-    1. Carefully read the provided CV text: {cv_text}.
-    2. Identify the top 5 technical skills and top 3 soft skills.
-    3. Suggest 3 specific job titles (e.g., Junior Data Engineer, Cloud Associate).
-    4. Provide a brief justification for each role based on the student's background.
+    Read the CV: {cv_text}.
+    List the top 5 technical skills and top 3 soft skills.
+    Suggest 3 job titles for a junior/student profile.
+    Be concise — max 200 words total.
   expected_output: >
-    A structured profile report in Spanish containing: Analysis of skills, 3 suggested roles, 
-    and a professional summary of the candidate's potential.
+    Structured profile in Spanish: skills list, 3 roles, 
+    and a 2-sentence professional summary. Max 200 words.
   agent: career_profiler
 
 job_scouting_task:
   description: >
-    1. Take the 3 suggested roles from the previous analysis.
-    2. Use search tools to find 3 real, active job postings (LinkedIn, Glassdoor, Indeed, etc.).
-    3. Ensure the roles are suitable for a student or junior profile.
-    4. CRITICAL: You MUST include the real, complete URL for each job posting. Do NOT invent URLs.
+    Take the 3 roles from the previous task.
+    Search for 3 real, active job postings.
+    Include: Job Title, Company, and the REAL URL.
+    Do NOT invent URLs. Be concise.
   expected_output: >
-    A list of 3 job postings, each with: Job Title, Company Name, and the real URL of the posting.
+    3 job postings. Each with: Title, Company, URL. Max 150 words.
   agent: job_market_scout
 
 company_intelligence_task:
   description: >
-    1. Research the companies identified in the job scouting phase.
-    2. Find information about their mission, recent tech projects, and "work with us" philosophy.
-    3. Identify 2 specific "pain points" or values the company has mentioned recently.
-    4. Write a 2-3 sentence company presentation summarizing what the company does and why it is a great place to work.
+    For each company from the job scouting phase:
+    Find what they do, their values, and 1 recent project.
+    Write a 2-sentence company summary.
   expected_output: >
-    An intelligence brief for each company including: a short company presentation (2-3 sentences),
-    key facts, values, and recent projects useful for the application.
+    Brief for each company: 2-sentence summary,
+    values, and 1 recent project. Max 200 words total.
   agent: corporate_culture_researcher
 
 custom_outreach_drafting_task:
   description: >
-    1. Combine the student's profile, the job requirements, and the company intelligence.
-    2. For EACH of the 3 companies, produce a structured block with:
-       - **Empresa**: Company name
-       - **Puesto**: Job title
-       - **Enlace a la oferta**: The real URL of the job posting (from the scouting phase)
-       - **Sobre la empresa**: A brief 2-3 sentence company presentation
-       - **Mensaje de postulación**: A personalized application message
-    3. The tone must be professional, enthusiastic, and NOT sound like AI.
-    4. ALL TEXT MUST BE WRITTEN IN SPANISH.
+    For EACH of the 3 companies, write in SPANISH:
+    - **Empresa**: name
+    - **Puesto**: title
+    - **Enlace**: real URL
+    - **Sobre la empresa**: 2-sentence summary
+    - **Mensaje de postulación**: 3-4 sentence cover message
+    Tone: professional, enthusiastic, human.
   expected_output: >
-    3 structured application blocks in Markdown format. Each block must include:
-    Empresa, Puesto, Enlace a la oferta (real URL), Sobre la empresa (brief presentation),
-    and the personalized Mensaje de postulación. All in Spanish.
+    3 application blocks in Markdown (Spanish).
+    Each: Empresa, Puesto, Enlace, Sobre la empresa, Mensaje.
   agent: application_strategist

@@ -1,5 +1,8 @@
 crewai==1.9.3
 crewai-tools==1.9.3
-litellm==1.34.22
 openai==1.83.0
 python-dotenv>=1.0.0
+streamlit
+PyMuPDF
+groq
+requests
