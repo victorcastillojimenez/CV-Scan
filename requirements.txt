@@ -6,3 +6,4 @@ streamlit
 PyMuPDF
 groq
 requests
+google-generativeai

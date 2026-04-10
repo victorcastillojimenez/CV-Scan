@@ -307,8 +307,8 @@ with tab_crew:
             st.error("⚠️ Sube un CV primero.")
         elif not nombre_estudiante.strip():
             st.error("⚠️ Introduce el nombre del estudiante.")
-        elif not api_key:
-            st.error("❌ Se necesita una API Key de Groq para los agentes.")
+        elif not groq_ok:
+            st.error("❌ Se necesita GROQ_API_KEY para los agentes.")
         elif not serper_ok:
             st.error("❌ Se necesita SERPER_API_KEY para las búsquedas web.")
         else:

@@ -5,35 +5,101 @@ Define la clase `AgenciaColocacion` que orquesta 4 agentes especializados
 en un flujo secuencial para analizar CVs, buscar empleos, investigar
 empresas y redactar postulaciones personalizadas.
 
-Se emplea el proceso SEQUENTIAL en lugar de HIERARCHICAL para evitar
-que CrewAI instancie un 5.º agente "manager" invisible que multiplica
-el consumo de tokens y dispara el rate-limit del tier gratuito de Groq.
+Se aplica un monkey-patch sobre `litellm.completion` para interceptar
+los errores 429 (rate-limit) a nivel más bajo que CrewAI, forzando
+esperas automáticas con backoff antes de reintentar.
 """
 
 import os
+import re
+import time
 from pathlib import Path
+from typing import Any
 
+import litellm
 from crewai import Agent, Crew, LLM, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai_tools import SerperDevTool
 
 from core.exceptions import AgencyConfigError
 
-# Directorio base del proyecto (parent de core/)
+# ── Directorio base del proyecto ─────────────────────────
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
-# ── Constantes de configuración del LLM ──────────────────
-# llama-3.1-8b-instant tiene 30 000 TPM en Groq Free (vs 6 000 del 70b)
+# ── Constantes ───────────────────────────────────────────
 DEFAULT_MODEL: str = "groq/llama-3.1-8b-instant"
 DEFAULT_TEMPERATURE: float = 0.4
-MAX_RETRIES: int = 5
-REQUEST_TIMEOUT: int = 120
-
-# Máx. peticiones por minuto — impone una cadencia que respeta el rate-limit
-AGENT_MAX_RPM: int = 6
-# Máx. iteraciones internas por agente — evita bucles infinitos de reintento
+AGENT_MAX_RPM: int = 2
 AGENT_MAX_ITER: int = 5
 
+# Segundos mínimos de espera antes de reintentar tras un 429
+BASE_WAIT_SECONDS: float = 20.0
+MAX_RETRIES: int = 12
+
+
+# ═══════════════════════════════════════════════════════════
+# MONKEY-PATCH: Reintento con espera a nivel de litellm
+# ═══════════════════════════════════════════════════════════
+# CrewAI captura el RateLimitError antes de que litellm pueda
+# reintentar. Este parche intercepta la llamada a nivel más
+# bajo para que las esperas se ejecuten DENTRO de la función
+# de completion, transparentes para CrewAI.
+
+_original_completion = litellm.completion
+
+
+def _extract_retry_delay(error_message: str) -> float:
+    """Extrae el delay sugerido por Groq del mensaje de error.
+
+    Args:
+        error_message: Texto del error que contiene 'try again in Xs'.
+
+    Returns:
+        Segundos de espera extraídos, o BASE_WAIT_SECONDS si no se encuentra.
+    """
+    match = re.search(r"try again in (\d+\.?\d*)s", error_message)
+    if match:
+        return float(match.group(1)) + 2.0  # Margen de seguridad de 2s
+    return BASE_WAIT_SECONDS
+
+
+def _completion_with_retry(*args: Any, **kwargs: Any) -> Any:
+    """Wrapper sobre litellm.completion con reintentos automáticos.
+
+    Captura errores 429 (RateLimitError) y duerme el tiempo que
+    indica Groq antes de reintentar, hasta MAX_RETRIES veces.
+
+    Raises:
+        El error original si se agotan todos los reintentos.
+    """
+    for attempt in range(MAX_RETRIES):
+        try:
+            return _original_completion(*args, **kwargs)
+        except litellm.RateLimitError as exc:
+            if attempt >= MAX_RETRIES - 1:
+                raise
+
+            wait = _extract_retry_delay(str(exc))
+            print(
+                f"  ⏳ Rate-limit alcanzado (intento {attempt + 1}/{MAX_RETRIES}). "
+                f"Esperando {wait:.0f}s antes de reintentar..."
+            )
+            time.sleep(wait)
+        except litellm.APIConnectionError:
+            # Reconexión tras timeout de red
+            if attempt >= MAX_RETRIES - 1:
+                raise
+            time.sleep(5.0)
+
+
+# Aplicar el monkey-patch globalmente
+litellm.completion = _completion_with_retry
+litellm.drop_params = True
+
+
+# ═══════════════════════════════════════════════════════════
+# CLASE PRINCIPAL
+# ═══════════════════════════════════════════════════════════
 
 @CrewBase
 class AgenciaColocacion:
@@ -45,8 +111,9 @@ class AgenciaColocacion:
         3. corporate_culture_researcher → Investiga las empresas.
         4. application_strategist → Redacta mensajes de postulación.
 
-    El flujo secuencial pasa la salida de cada tarea como contexto
-    a la siguiente, consumiendo ~60 % menos tokens que el jerárquico.
+    El monkey-patch sobre litellm.completion garantiza que los
+    errores 429 se resuelven con esperas automáticas en vez de
+    explotar la ejecución.
 
     Raises:
         AgencyConfigError: Si falta la GROQ_API_KEY en el entorno.
@@ -71,15 +138,12 @@ class AgenciaColocacion:
             model=DEFAULT_MODEL,
             temperature=DEFAULT_TEMPERATURE,
             api_key=groq_api_key,
-            max_retries=MAX_RETRIES,
-            request_timeout=REQUEST_TIMEOUT,
         )
 
-        # SerperDevTool: búsqueda de ofertas y cultura empresarial en vivo
         self.search_tool: SerperDevTool = SerperDevTool()
 
     # ==========================================
-    # DEFINICIÓN DE AGENTES (Decoradores @agent)
+    # AGENTES
     # ==========================================
 
     @agent
@@ -133,7 +197,7 @@ class AgenciaColocacion:
         )
 
     # ==========================================
-    # DEFINICIÓN DE TAREAS (Decoradores @task)
+    # TAREAS
     # ==========================================
 
     @task
@@ -170,17 +234,12 @@ class AgenciaColocacion:
         )
 
     # ==========================================
-    # ENSAMBLAJE DE LA CREW
+    # CREW
     # ==========================================
 
     @crew
     def crew(self) -> Crew:
-        """Crea la Agencia con un flujo de trabajo SECUENCIAL.
-
-        El flujo secuencial encadena las tareas una tras otra,
-        pasando el resultado de cada una como contexto a la siguiente.
-        Esto elimina el agente manager del modo jerárquico y reduce
-        el consumo de tokens en ~60 %, evitando los rate-limits.
+        """Crea la Agencia con flujo SECUENCIAL y reintentos a nivel de litellm.
 
         Returns:
             Crew: Instancia configurada y lista para ejecutarse.
@@ -189,7 +248,6 @@ class AgenciaColocacion:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            # Deshabilitado para evitar el error 401 de embeddings
             memory=False,
             verbose=True,
         )
