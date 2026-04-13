@@ -26,10 +26,28 @@ CHUNK_OVERLAP = 50  # palabras de solapamiento
 # Logger
 logger = logging.getLogger(__name__)
 
+# Caché global del modelo para evitar recargas innecesarias
+_modelo_embedding_cache = None
+
 
 # =============================================
 # Funciones auxiliares
 # =============================================
+
+
+def _obtener_modelo_embedding() -> SentenceTransformer:
+    """
+    Obtiene el modelo SentenceTransformer del caché global.
+    La primera llamada lo carga, las siguientes lo reutilizan.
+    
+    Returns:
+        Modelo SentenceTransformer cacheado
+    """
+    global _modelo_embedding_cache
+    if _modelo_embedding_cache is None:
+        logger.info(f"Cargando modelo de embeddings: {MODEL_NAME}")
+        _modelo_embedding_cache = SentenceTransformer(MODEL_NAME)
+    return _modelo_embedding_cache
 
 
 def _calcular_hash_archivo(ruta: Path) -> str:
@@ -178,8 +196,8 @@ def ingestar_conocimiento(coleccion: chromadb.Collection, carpeta: str) -> int:
         return 0
 
     try:
-        # Inicializar modelo de embeddings
-        modelo = SentenceTransformer(MODEL_NAME)
+        # Obtener modelo de embeddings (cacheado)
+        modelo = _obtener_modelo_embedding()
 
         fragmentos_totales = 0
 
@@ -308,8 +326,8 @@ def consultar_rag(
         if count == 0:
             return ""
 
-        # Inicializar modelo para generar embedding de consulta
-        modelo = SentenceTransformer(MODEL_NAME)
+        # Obtener modelo para generar embedding de consulta (cacheado)
+        modelo = _obtener_modelo_embedding()
         embedding_consulta = modelo.encode([consulta])[0]
 
         # Consultar colección

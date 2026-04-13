@@ -23,23 +23,31 @@ from function_calling.my_functions import (
     buscar_ofertas_empleo,
     generar_carta_presentacion,
     extraer_datos_cv,
+    _leer_pdf,
 )
+from function_calling.cv_extractor import ExtractorCV
 
 # =============================================
 #  Configuración
 # =============================================
 
-MODEL_NAME = "gpt-5-nano"
+MODEL_NAME = "gpt-4o-mini"
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "Eres un asistente experto en análisis de CVs y búsqueda de empleo. "
-    "Tienes acceso a herramientas para: buscar ofertas de empleo reales, "
-    "generar cartas de presentación profesionales, y extraer datos "
-    "estructurados de un CV. "
-    "El CV del candidato está disponible en: {cv_path}. "
-    "Usa las herramientas disponibles según lo que el usuario necesite."
+SYSTEM_PROMPT_TEMPLATE = (
+    "Eres un experto en redacción de cartas de presentación y búsqueda de empleo. "
+    "Tienes acceso a herramientas para: buscar ofertas reales, generar cartas profesionales, "
+    "y extraer datos del CV.\n\n"
+    "📋 INFORMACIÓN DEL CANDIDATO:\n"
+    "{contexto_cv}\n\n"
+    "⚙️ INSTRUCCIONES CRÍTICAS:\n"
+    "- Cuando generes cartas: USA EXACTAMENTE los datos personales proporcionados\n"
+    "- Las cartas deben ser COMPLETAS y LISTAS para copiar/pegar en email\n"
+    "- Incluye saludo, introducción, experiencia relevante, motivación y cierre\n"
+    "- En búsquedas: Estructura cada oferta con job_id, sector, funciones, perfil buscado y beneficios\n"
+    "- Personaliza siempre usando datos reales del candidato: nombre, experiencia, habilidades\n"
+    "- Usa siempre las herramientas cuando el usuario las solicite."
 )
 
 
@@ -49,19 +57,32 @@ SYSTEM_PROMPT = (
 
 
 def _build_input(message: str, cv_path: str) -> list[dict[str, str]]:
-    """Construye los mensajes de entrada (developer + user).
+    """Construye los mensajes de entrada (developer + user) con contexto del CV.
 
     Args:
         message: Mensaje del usuario.
-        cv_path: Ruta al CV para incluir en el prompt del sistema.
+        cv_path: Ruta al CV para extraer datos.
 
     Returns:
         Lista de mensajes con roles 'developer' y 'user'.
     """
+    # Extraer contexto del CV automáticamente
+    contexto_cv = ""
+    try:
+        texto_cv = _leer_pdf(cv_path)
+        extractor = ExtractorCV()
+        contexto_cv = extractor.obtener_contexto_cv(texto_cv)
+        logger.info(f"✓ Contexto del CV extraído exitosamente")
+    except Exception as e:
+        logger.warning(f"No se pudo extraer contexto del CV: {e}")
+        contexto_cv = f"CV disponible en: {cv_path}"
+
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(contexto_cv=contexto_cv)
+
     return [
         {
             "role": "developer",
-            "content": SYSTEM_PROMPT.format(cv_path=cv_path),
+            "content": system_prompt,
         },
         {
             "role": "user",
@@ -179,6 +200,7 @@ def gestionar_cv(message: str, cv_path: str) -> dict[str, Any]:
     # ── PROCESAR LLAMADAS A FUNCIONES ───────────────────────────
     new_input: list[dict[str, str]] = []
     last_function_name: str | None = None
+    funciones_invocadas: list[dict[str, Any]] = []
 
     for item in response.output:
         if item.type != "function_call":
@@ -187,12 +209,19 @@ def gestionar_cv(message: str, cv_path: str) -> dict[str, Any]:
         name = item.name
         args = json.loads(item.arguments)
 
-        logger.info("LLM invocó: %s(%s)", name, args)
+        logger.info("🔧 LLM invocó: %s(%s)", name, args)
 
         result = _handle_function_call(name, args, cv_path)
         last_function_name = name
+        
+        # Registrar función invocada
+        funciones_invocadas.append({
+            "nombre": name,
+            "argumentos": args,
+            "resultado_chars": len(result)
+        })
 
-        logger.info("Resultado de %s: %d caracteres", name, len(result))
+        logger.info("✓ Resultado de %s: %d caracteres", name, len(result))
 
         new_input.append({
             "type": "function_call_output",
@@ -202,13 +231,21 @@ def gestionar_cv(message: str, cv_path: str) -> dict[str, Any]:
 
     # Si el LLM no invocó ninguna función, devolver texto directo
     if not last_function_name:
-        logger.warning("El LLM no invocó ninguna función")
-        return {"respuesta_directa": response.output_text}
+        logger.warning("⚠️ El LLM no invocó ninguna función")
+        return {
+            "respuesta_directa": response.output_text,
+            "funciones_invocadas": [],
+        }
 
     # ── 2ª LLAMADA: Respuesta estructurada con JSON Schema ─────
     schema_name, schema = SCHEMA_MAP[last_function_name]
-    logger.info("Solicitando respuesta estructurada: %s", schema_name)
+    logger.info("📊 Solicitando respuesta estructurada: %s", schema_name)
 
-    return _get_structured_data(
+    resultado = _get_structured_data(
         client, new_input, response, schema_name, schema
     )
+    
+    # Agregar información de funciones invocadas al resultado
+    resultado["_funciones_invocadas"] = funciones_invocadas
+    
+    return resultado

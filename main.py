@@ -9,12 +9,16 @@ el análisis de CVs con conocimiento experto sobre buenas prácticas.
 
 import os
 import logging
+import json
+import tempfile
+from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 
 from core import styles, utils
 from core.rag import consultar_rag, inicializar_coleccion, ingestar_conocimiento
+from function_calling.cv_extractor import ExtractorCV
 
 # Configurar logging
 logging.basicConfig(
@@ -48,9 +52,10 @@ def _cargar_rag():
         Colección ChromaDB lista para consultas, o None si hay error.
     """
     try:
-        coleccion = inicializar_coleccion()
-        ruta_pdfs = os.path.join(os.path.dirname(__file__), "conocimiento_cv")
-        fragmentos_nuevos = ingestar_conocimiento(coleccion, ruta_pdfs)
+        with st.spinner("⏳ Inicializando sistema RAG..."):
+            coleccion = inicializar_coleccion()
+            ruta_pdfs = os.path.join(os.path.dirname(__file__), "conocimiento_cv")
+            fragmentos_nuevos = ingestar_conocimiento(coleccion, ruta_pdfs)
         logger.info("RAG inicializado correctamente. Fragmentos ingestados: %d", fragmentos_nuevos)
         return coleccion
     except Exception as exc:
@@ -69,6 +74,8 @@ defaults = {
     "mensajes": [],
     "texto_pdf": "",
     "nombre_pdf": "",
+    "datos_cv_extraidos": {},
+    "pdf_temp_path": None,
     "analisis_realizado": "",
     "crew_resultado": "",
     "crew_running": False,
@@ -241,7 +248,22 @@ if pdf_entrada:
         st.session_state.nombre_pdf = pdf_entrada.name
         st.session_state.analisis_realizado = ""
         st.session_state.crew_resultado = ""
-        st.toast("✅ Documento cargado con éxito", icon="📄")
+        
+        # ─── Extraer automáticamente datos estructurados del CV ───
+        try:
+            with st.spinner("📋 Extrayendo datos de tu CV..."):
+                extractor = ExtractorCV()
+                st.session_state.datos_cv_extraidos = extractor.extraer_datos_estructurados(texto_nuevo)
+                
+                if st.session_state.datos_cv_extraidos:
+                    nombre = st.session_state.datos_cv_extraidos.get("nombre", "Candidato")
+                    st.toast(f"✅ Perfil de {nombre} cargado con éxito", icon="👤")
+                else:
+                    st.toast("✅ Documento cargado con éxito", icon="📄")
+        except Exception as e:
+            logger.warning(f"No se pudieron extraer datos automáticos: {e}")
+            st.session_state.datos_cv_extraidos = {}
+            st.toast("✅ Documento cargado con éxito", icon="📄")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -477,63 +499,115 @@ with tab_chat:
                 with st.chat_message("user", avatar="👤"):
                     st.markdown(prompt_usuario)
 
-                # RAG dinámico: consultar conocimiento experto según la pregunta
-                contexto_rag = consultar_rag(prompt_usuario, coleccion_rag)
-
-                contexto = (
-                    f"Actúa como asistente de RRHH. "
-                    f"Aquí tienes el contenido del CV:\n{st.session_state.texto_pdf[:6000]}"
-                )
-                if contexto_rag:
-                    contexto += (
-                        f"\n\nCONOCIMIENTO EXPERTO relevante para esta consulta "
-                        f"(úsalo para fundamentar tu respuesta):\n{contexto_rag}"
-                    )
-                if st.session_state.analisis_realizado:
-                    contexto += (
-                        f"\n\nADEMÁS, YA HAS GENERADO ESTE INFORME DE ANÁLISIS "
-                        f"(Úsalo si preguntan):\n{st.session_state.analisis_realizado}"
-                    )
-                if st.session_state.crew_resultado:
-                    contexto += (
-                        f"\n\nTAMBIÉN tienes el resultado de la AGENCIA CREWAI "
-                        f"(ofertas y postulaciones):\n{st.session_state.crew_resultado}"
-                    )
-
-                mensajes_para_enviar = [
-                    {"role": "system", "content": contexto}
-                ] + st.session_state.mensajes
-
                 with st.chat_message("assistant", avatar="🤖"):
-                    respuesta_completa = ""
                     placeholder_resp = st.empty()
+                    placeholder_funcs = st.empty()
+                    respuesta_completa = ""
+                    
+                    # ─── INTENTAR CON FUNCTION CALLING (OpenAI) ───
+                    openai_key = os.getenv("OPENAI_API_KEY")
+                    
+                    if openai_key:
+                        try:
+                            with st.spinner("🔧 Procesando con function calling..."):
+                                from function_calling.manage_cv import gestionar_cv
+                                
+                                # Crear archivo temporal si es necesario
+                                cv_temp_path = None
+                                if hasattr(st.session_state, 'pdf_temp_path') and st.session_state.pdf_temp_path:
+                                    cv_temp_path = st.session_state.pdf_temp_path
+                                else:
+                                    # Crear temp con el texto del PDF
+                                    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp:
+                                        tmp.write(st.session_state.texto_pdf)
+                                        cv_temp_path = tmp.name
+                                    st.session_state.pdf_temp_path = cv_temp_path
+                                
+                                # Llamar a gestionar_cv
+                                resultado_fc = gestionar_cv(prompt_usuario, cv_temp_path)
+                                
+                                # Mostrar funciones invocadas
+                                funciones_info = resultado_fc.pop("_funciones_invocadas", [])
+                                
+                                if funciones_info:
+                                    funcs_html = "🔧 **Funciones invocadas:**\n"
+                                    for func in funciones_info:
+                                        funcs_html += f"• `{func['nombre']}` → {func['resultado_chars']} chars\n"
+                                    placeholder_funcs.markdown(funcs_html)
+                                
+                                # Extraer respuesta
+                                if "respuesta_directa" in resultado_fc:
+                                    respuesta_completa = resultado_fc["respuesta_directa"]
+                                else:
+                                    # Formatear resultado estructurado
+                                    respuesta_completa = json.dumps(resultado_fc, ensure_ascii=False, indent=2)
+                                
+                                placeholder_resp.markdown(respuesta_completa)
+                                logger.info("✅ Function calling completado exitosamente")
+                                
+                        except Exception as e:
+                            logger.warning(f"Function calling falló: {e}. Cayendo a Groq...")
+                            # Caer a Groq si falla OpenAI
+                            openai_key = None
+                    
+                    # ─── FALLBACK: USO DE GROQ ───
+                    if not openai_key:
+                        # RAG dinámico
+                        contexto_rag = consultar_rag(prompt_usuario, coleccion_rag)
 
-                    if modo == "API (Groq Cloud)":
-                        if not api_key:
-                            st.error("❌ Check API Key")
+                        # Construir contexto
+                        contexto = (
+                            f"Actúa como asistente de RRHH. "
+                            f"Aquí tienes el contenido del CV:\n{st.session_state.texto_pdf[:6000]}"
+                        )
+                        
+                        if st.session_state.datos_cv_extraidos:
+                            datos_formatted = json.dumps(st.session_state.datos_cv_extraidos, 
+                                                          ensure_ascii=False, indent=2)
+                            contexto += (
+                                f"\n\n📊 PERFIL ESTRUCTURADO:\n"
+                                f"{datos_formatted}"
+                            )
+                        
+                        if contexto_rag:
+                            contexto += (
+                                f"\n\nCONOCIMIENTO EXPERTO:\n{contexto_rag}"
+                            )
+                        if st.session_state.analisis_realizado:
+                            contexto += (
+                                f"\n\nINFORME PREVIO:\n{st.session_state.analisis_realizado}"
+                            )
+                        if st.session_state.crew_resultado:
+                            contexto += (
+                                f"\n\nRESULTADO AGENCIA:\n{st.session_state.crew_resultado}"
+                            )
+
+                        mensajes_para_enviar = [
+                            {"role": "system", "content": contexto}
+                        ] + st.session_state.mensajes
+
+                        if modo == "API (Groq Cloud)":
+                            if not api_key:
+                                st.error("❌ API Key requerida")
+                            else:
+                                stream = utils.consultar_groq(
+                                    modelo_seleccionado,
+                                    mensajes_para_enviar,
+                                    api_key,
+                                )
+                                if stream:
+                                    for chunk in stream:
+                                        if chunk.choices[0].delta.content:
+                                            respuesta_completa += chunk.choices[0].delta.content
+                                            placeholder_resp.markdown(respuesta_completa)
                         else:
-                            stream = utils.consultar_groq(
-                                modelo_seleccionado,
-                                mensajes_para_enviar,
-                                api_key,
+                            stream = utils.consultar_local_ollama(
+                                modelo_seleccionado, mensajes_para_enviar
                             )
                             if stream:
                                 for chunk in stream:
-                                    if chunk.choices[0].delta.content:
-                                        respuesta_completa += (
-                                            chunk.choices[0].delta.content
-                                        )
-                                        placeholder_resp.markdown(
-                                            respuesta_completa
-                                        )
-                    else:
-                        stream = utils.consultar_local_ollama(
-                            modelo_seleccionado, mensajes_para_enviar
-                        )
-                        if stream:
-                            for chunk in stream:
-                                respuesta_completa += chunk
-                                placeholder_resp.markdown(respuesta_completa)
+                                    respuesta_completa += chunk
+                                    placeholder_resp.markdown(respuesta_completa)
 
                     st.session_state.mensajes.append(
                         {"role": "assistant", "content": respuesta_completa}

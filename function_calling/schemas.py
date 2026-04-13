@@ -14,22 +14,59 @@ SCHEMA_OFERTAS: dict = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "titulo": {"type": "string"},
-                    "empresa": {"type": "string"},
-                    "ubicacion": {"type": "string"},
-                    "url": {"type": "string"},
-                    "descripcion_breve": {"type": "string"},
+                    "job_id": {"type": "string", "description": "ID único de la oferta"},
+                    "titulo": {"type": "string", "description": "Título del puesto"},
+                    "empresa": {"type": "string", "description": "Nombre de la empresa"},
+                    "ubicacion": {"type": "string", "description": "Ciudad/región"},
+                    "modalidad": {
+                        "type": "string",
+                        "enum": ["Presencial", "Remoto", "Hibrido"],
+                        "description": "Tipo de trabajo"
+                    },
+                    "sector": {"type": "string", "description": "Sector/industria (ej: Tech, Finance)"},
+                    "nivel_experiencia": {
+                        "type": "string",
+                        "enum": ["Entry Level", "Junior", "Mid", "Senior"],
+                        "description": "Nivel requerido"
+                    },
+                    "descripcion_breve": {
+                        "type": "string",
+                        "description": "Resumen de la oferta (máx 300 chars)"
+                    },
+                    "funciones_clave": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3,
+                        "description": "3 funciones principales"
+                    },
+                    "perfil_buscado": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3,
+                        "description": "3 requisitos clave"
+                    },
+                    "beneficios": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3,
+                        "description": "3 beneficios principales"
+                    },
+                    "url": {"type": "string", "description": "Link directo a la oferta"},
                     "relevancia": {
                         "type": "string",
-                        "enum": ["alta", "media", "baja"],
+                        "enum": ["Alta", "Media", "Baja"],
+                        "description": "Relevancia para el perfil"
                     },
                 },
                 "required": [
+                    "job_id",
                     "titulo",
                     "empresa",
                     "ubicacion",
-                    "url",
+                    "modalidad",
+                    "nivel_experiencia",
                     "descripcion_breve",
+                    "url",
                     "relevancia",
                 ],
                 "additionalProperties": False,
@@ -37,9 +74,7 @@ SCHEMA_OFERTAS: dict = {
         },
         "resumen": {
             "type": "string",
-            "description": (
-                "Resumen general del mercado laboral para el perfil buscado"
-            ),
+            "description": "Análisis breve del mercado laboral y tendencias"
         },
     },
     "required": ["ofertas", "resumen"],
@@ -52,20 +87,41 @@ SCHEMA_CARTA: dict = {
     "properties": {
         "asunto": {
             "type": "string",
-            "description": "Línea de asunto del email de presentación",
+            "description": "Línea de asunto del email (ej: Solicitud: Posición de Senior Developer en Google)"
         },
-        "saludo": {"type": "string"},
         "cuerpo": {
             "type": "string",
-            "description": "Cuerpo principal de la carta de presentación",
+            "description": "Cuerpo completo de la carta (introducción, experiencia, motivación, cierre)"
         },
-        "despedida": {"type": "string"},
+        "firma": {
+            "type": "object",
+            "properties": {
+                "nombre_completo": {"type": "string"},
+                "email": {"type": "string"},
+                "telefono": {"type": "string"},
+                "ubicacion": {"type": "string"},
+                "linkedin": {"type": "string", "description": "URL de LinkedIn (si aplica)"}
+            },
+            "required": ["nombre_completo", "email", "telefono"],
+            "description": "Datos de firma con contacto ready-to-use"
+        },
+        "texto_completo_email": {
+            "type": "string",
+            "description": "Carta completa formateada lista para copiar y pegar en email"
+        },
+        "consejos_envio": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 3,
+            "description": "3 consejos sobre cómo enviar esta carta"
+        },
         "tono_detectado": {
             "type": "string",
             "enum": ["formal", "semiformal", "creativo"],
+            "description": "Tono final detectado en la carta"
         },
     },
-    "required": ["asunto", "saludo", "cuerpo", "despedida", "tono_detectado"],
+    "required": ["asunto", "cuerpo", "firma", "texto_completo_email"],
     "additionalProperties": False,
 }
 
