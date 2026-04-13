@@ -363,26 +363,15 @@ with tab_crew:
         "investigar empresas y generar mensajes de postulación personalizados."
     )
 
-    col_name, col_launch = st.columns([3, 1])
-    with col_name:
-        nombre_estudiante = st.text_input(
-            "👤 Nombre del estudiante",
-            value="",
-            placeholder="Ej: María García López",
-        )
-    with col_launch:
-        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        boton_crew = st.button(
-            "🚀 Lanzar Agencia",
-            use_container_width=True,
-            disabled=st.session_state.crew_running,
-        )
+    boton_crew = st.button(
+        "🚀 Lanzar Agencia",
+        use_container_width=True,
+        disabled=st.session_state.crew_running,
+    )
 
     if boton_crew:
         if not st.session_state.texto_pdf:
             st.error("⚠️ Sube un CV primero.")
-        elif not nombre_estudiante.strip():
-            st.error("⚠️ Introduce el nombre del estudiante.")
         elif not groq_ok:
             st.error("❌ Se necesita GROQ_API_KEY para los agentes.")
         elif not serper_ok:
@@ -397,8 +386,9 @@ with tab_crew:
                     from core.agencia_crew import AgenciaColocacion
 
                     agencia = AgenciaColocacion()
+                    nombre_extraido = st.session_state.datos_cv_extraidos.get("nombre", "Candidato")
                     datos = {
-                        "nombre_estudiante": nombre_estudiante.strip(),
+                        "nombre_estudiante": nombre_extraido,
                         "cv_text": st.session_state.texto_pdf[:6000],
                     }
                     resultado = agencia.crew().kickoff(inputs=datos)
@@ -546,9 +536,119 @@ with tab_chat:
                                 logger.info("✅ Function calling completado exitosamente")
                                 
                         except Exception as e:
-                            logger.warning(f"Function calling falló: {e}. Cayendo a Groq...")
-                            # Caer a Groq si falla OpenAI
-                            openai_key = None
+                            logger.warning(f"Function calling falló: {e}. Intentando funciones con fallback...")
+                            
+                            # ─── INTENTAR FUNCIONES DIRECTAS CON FALLBACK ───
+                            try:
+                                from function_calling.my_functions import (
+                                    buscar_ofertas_empleo,
+                                    generar_carta_presentacion,
+                                    extraer_datos_cv
+                                )
+                                
+                                prompt_lower = prompt_usuario.lower()
+                                resultado_fc = None
+                                
+                                # Detectar tipo de solicitud y invocar función con fallback
+                                if any(word in prompt_lower for word in ["buscar", "ofertas", "empleo", "trabajo", "vacantes", "posición", "puesto"]):
+                                    st.info("🔍 Buscando ofertas con fallback...")
+                                    # Inferir parámetros del prompt
+                                    rol = "Developer"  # default
+                                    ubicacion = "Madrid"  # default
+                                    modalidad = "Remoto"  # default
+                                    
+                                    # Intentar extraer parámetros del prompt
+                                    if "remoto" in prompt_lower:
+                                        modalidad = "remoto"
+                                    elif "presencial" in prompt_lower or "oficina" in prompt_lower:
+                                        modalidad = "presencial"
+                                    elif "híbrido" in prompt_lower or "hibrido" in prompt_lower:
+                                        modalidad = "hibrido"
+                                    
+                                    ofertas_json = buscar_ofertas_empleo(rol, ubicacion, modalidad)
+                                    resultado_fc = json.loads(ofertas_json)
+                                    placeholder_funcs.markdown("🔧 **Funciones invocadas:**\n• `buscar_ofertas_empleo` → Fallback")
+                                    
+                                elif any(word in prompt_lower for word in ["carta", "presentación", "postulación", "candidatura"]):
+                                    st.info("✉️ Generando carta con fallback...")
+                                    empresa = "NeuroAI Innovación"  # default
+                                    puesto = "AI/LLM Developer"  # default
+                                    tono = "formal"
+                                    
+                                    cv_temp_path = st.session_state.pdf_temp_path if hasattr(st.session_state, 'pdf_temp_path') else None
+                                    carta_json_str = generar_carta_presentacion(empresa, puesto, tono, cv_temp_path)
+                                    resultado_fc = json.loads(carta_json_str)
+                                    placeholder_funcs.markdown("🔧 **Funciones invocadas:**\n• `generar_carta_presentacion` → Fallback")
+                                    
+                                elif any(word in prompt_lower for word in ["extraer", "datos", "información", "cv", "currículum"]):
+                                    st.info("📋 Extrayendo datos CV con fallback...")
+                                    cv_temp_path = st.session_state.pdf_temp_path if hasattr(st.session_state, 'pdf_temp_path') else None
+                                    datos_json_str = extraer_datos_cv(cv_temp_path)
+                                    resultado_fc = json.loads(datos_json_str)
+                                    placeholder_funcs.markdown("🔧 **Funciones invocadas:**\n• `extraer_datos_cv` → Fallback")
+                                
+                                if resultado_fc:
+                                    # Detectar tipo de resultado y enviar a Groq para formatear
+                                    tipo_resultado = ""
+                                    if "ofertas" in str(resultado_fc).lower() or any(word in prompt_lower for word in ["buscar", "ofertas", "empleo", "trabajo"]):
+                                        tipo_resultado = "ofertas"
+                                    elif "asunto" in str(resultado_fc).lower() or any(word in prompt_lower for word in ["carta", "presentación"]):
+                                        tipo_resultado = "carta"
+                                    elif "nombre" in str(resultado_fc).lower() or any(word in prompt_lower for word in ["extraer", "datos"]):
+                                        tipo_resultado = "datos_cv"
+                                    
+                                    # Si es resultado de ofertas o carta, enviar a Groq para formatear bonito
+                                    if tipo_resultado in ["ofertas", "carta"] and api_key and modo == "API (Groq Cloud)":
+                                        st.info("✨ Formateando información con Groq...")
+                                        
+                                        resultado_json = json.dumps(resultado_fc, ensure_ascii=False, indent=2)
+                                        
+                                        if tipo_resultado == "ofertas":
+                                            prompt_formato = f"""Tienes estas ofertas de empleo en formato JSON. 
+Por favor, preséntalas de forma bonita, atractiva y fácil de leer para el usuario.
+Incluye emojis, títulos, descripciones bien estructuradas, y resalta los puntos clave.
+Aquí están los datos:
+
+{resultado_json}
+
+Formatea esto de una manera profesional y atractiva, manteniendo toda la información importante."""
+                                        else:  # carta
+                                            prompt_formato = f"""Tienes una carta de presentación en formato JSON.
+Por favor, preséntala de forma profesional y formateada correctamente.
+Aquí están los datos:
+
+{resultado_json}
+
+Presenta la carta de forma profesional, con saltos de línea adecuados y estructura clara."""
+                                        
+                                        mensajes_groq = [
+                                            {"role": "system", "content": "Eres un asistente profesional que formatea información de forma bonita y legible."},
+                                            {"role": "user", "content": prompt_formato}
+                                        ]
+                                        
+                                        respuesta_completa = ""
+                                        stream = utils.consultar_groq(
+                                            modelo_seleccionado,
+                                            mensajes_groq,
+                                            api_key,
+                                        )
+                                        if stream:
+                                            for chunk in stream:
+                                                if chunk.choices[0].delta.content:
+                                                    respuesta_completa += chunk.choices[0].delta.content
+                                                    placeholder_resp.markdown(respuesta_completa)
+                                    else:
+                                        # Mostrar JSON directamente si no se puede enviar a Groq
+                                        respuesta_completa = json.dumps(resultado_fc, ensure_ascii=False, indent=2)
+                                        placeholder_resp.markdown(respuesta_completa)
+                                    
+                                    logger.info("✅ Función fallback ejecutada exitosamente")
+                                else:
+                                    openai_key = None  # Caer a Groq si no se detectó función
+                                    
+                            except Exception as fallback_e:
+                                logger.warning(f"Fallback también falló: {fallback_e}. Cayendo a Groq...")
+                                openai_key = None
                     
                     # ─── FALLBACK: USO DE GROQ ───
                     if not openai_key:
