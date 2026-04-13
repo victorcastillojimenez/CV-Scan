@@ -275,7 +275,7 @@ Victor Castillo Jimenez""",
         "firma": {
             "nombre_completo": "Victor Castillo Jimenez",
             "email": "victorcastillojimenez04@gmail.com",
-            "telefono": "+34 674375338",
+            "telefono": "+34 674323343",
             "ubicacion": "Madrid, España",
             "linkedin": "https://linkedin.com/in/victorcastillojimenez"
         },
@@ -550,7 +550,7 @@ def _extraer_datos_cv_fallback() -> str:
     datos_cv = {
         "nombre": "Victor Castillo Jimenez",
         "email": "victorcastillojimenez04@gmail.com",
-        "telefono": "+34 674375338",
+        "telefono": "+34 679290329",
         "ubicacion": "Madrid 28043, España",
         "titulo_profesional": "Estudiante de especialización en Big Data e Inteligencia Artificial / Técnico de Desarrollo de Aplicaciones Multiplataforma",
         "resumen": "Desarrollador junior apasionado por el Backend, Ciencia de Datos e Inteligencia Artificial. Con experiencia práctica en LangChain, Python y desarrollo de agentes de IA. Inquietud por aplicar habilidades en entorno profesional con voluntad de aprender.",
